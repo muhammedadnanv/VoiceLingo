@@ -42,5 +42,50 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    
+    <!-- Disable Inspect Element & DevTools -->
+    <script>
+      (function() {
+        document.addEventListener('contextmenu', function(e) {
+          e.preventDefault();
+          return false;
+        });
+        document.addEventListener('keydown', function(e) {
+          if (e.key === 'F12') { e.preventDefault(); return false; }
+          if (e.ctrlKey && e.shiftKey && ['I', 'J', 'C'].includes(e.key.toUpperCase())) {
+            e.preventDefault(); return false;
+          }
+          if (e.ctrlKey && e.key.toUpperCase() === 'U') { e.preventDefault(); return false; }
+        });
+        console.log('%cStop!', 'color: red; font-size: 50px; font-weight: bold;');
+      })();
+    </script>
+    
+    <!-- Cookie Consent Banner -->
+    <script>
+      (function() {
+        if (localStorage.getItem('cookie_consent')) return;
+        
+        const banner = document.createElement('div');
+        banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#0f1419;color:white;padding:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;z-index:99999;border-top:1px solid #0d9488;';
+        banner.innerHTML = `
+          <p style="margin:0;flex:1;min-width:200px;">We use cookies to enhance your experience. By continuing to visit this site you agree to our use of cookies.</p>
+          <div style="display:flex;gap:8px;">
+            <button id="accept-cookies" style="background:#0d9488;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:500;">Accept</button>
+            <button id="decline-cookies" style="background:transparent;color:white;border:1px solid #0d9488;padding:10px 20px;border-radius:8px;cursor:pointer;">Decline</button>
+          </div>
+        `;
+        document.body.appendChild(banner);
+        
+        document.getElementById('accept-cookies').onclick = function() {
+          localStorage.setItem('cookie_consent', 'accepted');
+          banner.remove();
+        };
+        document.getElementById('decline-cookies').onclick = function() {
+          localStorage.setItem('cookie_consent', 'declined');
+          banner.remove();
+        };
+      })();
+    </script>
   </body>
 </html>
