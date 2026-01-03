@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import Header from '@/components/Header';
 import VoiceLogo from '@/components/VoiceLogo';
 import LanguageSelector from '@/components/LanguageSelector';
@@ -7,10 +7,11 @@ import TranslationCard from '@/components/TranslationCard';
 import WaveVisualizer from '@/components/WaveVisualizer';
 import HistoryPanel, { HistoryItem } from '@/components/HistoryPanel';
 import { Button } from '@/components/ui/button';
-import { ArrowLeftRight, Sparkles } from 'lucide-react';
+import { ArrowLeftRight, Sparkles, Target } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { usePersonalization } from '@/hooks/usePersonalization';
 import { useToast } from '@/hooks/use-toast';
+import { Progress } from '@/components/ui/progress';
 
 const Index = () => {
   const { toast } = useToast();
@@ -21,14 +22,53 @@ const Index = () => {
     setSourceLanguage,
     setTargetLanguage,
     incrementTranslations,
+    addToHistory,
+    clearHistory: clearStoredHistory,
     getWelcomeMessage,
+    getProgressPercentage,
+    getMilestoneMessage,
   } = usePersonalization();
 
   const [isListening, setIsListening] = useState(false);
   const [originalText, setOriginalText] = useState('');
   const [translatedText, setTranslatedText] = useState('');
   const [phonetic, setPhonetic] = useState('');
-  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [displayHistory, setDisplayHistory] = useState<HistoryItem[]>([]);
+
+  // Sync history from preferences on load
+  useEffect(() => {
+    if (isLoaded && preferences.translationHistory) {
+      setDisplayHistory(
+        preferences.translationHistory.map(item => ({
+          ...item,
+          timestamp: new Date(item.timestamp),
+        }))
+      );
+    }
+  }, [isLoaded, preferences.translationHistory]);
+
+  // Show milestone toasts
+  useEffect(() => {
+    if (preferences.totalTranslations > 0) {
+      const milestones = [10, 25, 50, 100, 250, 500, 1000];
+      if (milestones.includes(preferences.totalTranslations)) {
+        toast({
+          title: "🎉 Milestone Reached!",
+          description: `Congratulations! You've completed ${preferences.totalTranslations} translations!`,
+        });
+      }
+    }
+  }, [preferences.totalTranslations, toast]);
+
+  // Daily goal completion toast
+  useEffect(() => {
+    if (preferences.todayTranslations === preferences.dailyGoal && preferences.todayTranslations > 0) {
+      toast({
+        title: "🏆 Daily Goal Complete!",
+        description: `Amazing work! You've reached your goal of ${preferences.dailyGoal} translations today.`,
+      });
+    }
+  }, [preferences.todayTranslations, preferences.dailyGoal, toast]);
 
   const handleTranscript = useCallback(
     async (text: string) => {
@@ -41,7 +81,16 @@ const Index = () => {
         setPhonetic(result.phonetic);
         incrementTranslations();
 
-        // Add to history
+        // Add to persistent history
+        addToHistory({
+          original: text,
+          translated: result.translatedText,
+          phonetic: result.phonetic,
+          sourceLang: preferences.sourceLanguage,
+          targetLang: preferences.targetLanguage,
+        });
+
+        // Update display history
         const historyItem: HistoryItem = {
           id: Date.now().toString(),
           original: text,
@@ -51,10 +100,10 @@ const Index = () => {
           targetLang: preferences.targetLanguage,
           timestamp: new Date(),
         };
-        setHistory(prev => [historyItem, ...prev.slice(0, 9)]);
+        setDisplayHistory(prev => [historyItem, ...prev.slice(0, 9)]);
       }
     },
-    [preferences.sourceLanguage, preferences.targetLanguage, translate, incrementTranslations]
+    [preferences.sourceLanguage, preferences.targetLanguage, translate, incrementTranslations, addToHistory]
   );
 
   const swapLanguages = () => {
@@ -74,8 +123,9 @@ const Index = () => {
     speechSynthesis.speak(utterance);
   };
 
-  const clearHistory = () => {
-    setHistory([]);
+  const handleClearHistory = () => {
+    setDisplayHistory([]);
+    clearStoredHistory();
     toast({
       title: "History cleared",
       description: "Your translation history has been cleared.",
@@ -89,6 +139,8 @@ const Index = () => {
       </div>
     );
   }
+
+  const progressPercent = getProgressPercentage();
 
   return (
     <div className="min-h-screen bg-background">
@@ -106,6 +158,23 @@ const Index = () => {
           </h1>
           <p className="text-muted-foreground text-lg max-w-md mx-auto">
             Translate your voice instantly with pronunciation guides to help you speak like a native.
+          </p>
+        </section>
+
+        {/* Daily Progress */}
+        <section className="bg-card rounded-2xl p-4 shadow-card border border-border">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <Target className="w-4 h-4 text-primary" />
+              <span>Daily Goal</span>
+            </div>
+            <span className="text-sm text-muted-foreground">
+              {preferences.todayTranslations}/{preferences.dailyGoal} translations
+            </span>
+          </div>
+          <Progress value={progressPercent} className="h-2" />
+          <p className="text-xs text-muted-foreground mt-2 text-center">
+            {getMilestoneMessage()}
           </p>
         </section>
 
@@ -161,10 +230,30 @@ const Index = () => {
 
         {/* History */}
         <HistoryPanel
-          history={history}
-          onClear={clearHistory}
+          history={displayHistory}
+          onClear={handleClearHistory}
           onSpeak={handleSpeak}
         />
+
+        {/* Stats */}
+        {preferences.totalTranslations > 0 && (
+          <section className="bg-card/50 rounded-2xl p-6 border border-border/50">
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <p className="text-2xl font-bold text-primary">{preferences.totalTranslations}</p>
+                <p className="text-xs text-muted-foreground">Total Translations</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-primary">{preferences.sessionCount}</p>
+                <p className="text-xs text-muted-foreground">Sessions</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-primary">{preferences.recentLanguages.length}</p>
+                <p className="text-xs text-muted-foreground">Languages Used</p>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* Footer */}
         <footer className="text-center py-8 border-t border-border">
