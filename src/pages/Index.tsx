@@ -15,6 +15,7 @@ import { ArrowLeftRight, Sparkles, Target, Settings2 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { usePersonalization } from '@/hooks/usePersonalization';
 import { useHyperPersonalization } from '@/hooks/useHyperPersonalization';
+import { useAchievements } from '@/hooks/useAchievements';
 import { useToast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
 
@@ -53,12 +54,15 @@ const Index = () => {
     getSmartGreeting,
   } = useHyperPersonalization();
 
+  const { checkAchievements, newlyUnlocked, clearNewlyUnlocked } = useAchievements();
+
   const [isListening, setIsListening] = useState(false);
   const [originalText, setOriginalText] = useState('');
   const [translatedText, setTranslatedText] = useState('');
   const [phonetic, setPhonetic] = useState('');
   const [displayHistory, setDisplayHistory] = useState<HistoryItem[]>([]);
   const [showLevelSelector, setShowLevelSelector] = useState(false);
+  const [dailyGoalsCompleted, setDailyGoalsCompleted] = useState(0);
 
   // Show onboarding for new users
   useEffect(() => {
@@ -96,8 +100,15 @@ const Index = () => {
           description: `Congratulations! You've completed ${preferences.totalTranslations} translations!`,
         });
       }
+      // Check achievements on translation count change
+      checkAchievements({
+        totalTranslations: preferences.totalTranslations,
+        streak: behavior.consecutiveDays,
+        languagesUsed: behavior.uniqueLanguagesUsed,
+        dailyGoalsCompleted,
+      });
     }
-  }, [preferences.totalTranslations, toast]);
+  }, [preferences.totalTranslations, behavior.consecutiveDays, behavior.uniqueLanguagesUsed, dailyGoalsCompleted, checkAchievements, toast]);
 
   // Daily goal completion toast
   useEffect(() => {
@@ -106,8 +117,22 @@ const Index = () => {
         title: "🏆 Daily Goal Complete!",
         description: `Amazing work! You've reached your goal of ${preferences.dailyGoal} translations today.`,
       });
+      setDailyGoalsCompleted(prev => prev + 1);
     }
   }, [preferences.todayTranslations, preferences.dailyGoal, toast]);
+
+  // Show achievement unlock toasts
+  useEffect(() => {
+    if (newlyUnlocked.length > 0) {
+      newlyUnlocked.forEach(achievement => {
+        toast({
+          title: `🏅 Achievement Unlocked!`,
+          description: `${achievement.title} - ${achievement.description}`,
+        });
+      });
+      clearNewlyUnlocked();
+    }
+  }, [newlyUnlocked, clearNewlyUnlocked, toast]);
 
   const handleTranscript = useCallback(
     async (text: string) => {
