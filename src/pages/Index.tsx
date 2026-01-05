@@ -6,10 +6,15 @@ import VoiceRecorder from '@/components/VoiceRecorder';
 import TranslationCard from '@/components/TranslationCard';
 import WaveVisualizer from '@/components/WaveVisualizer';
 import HistoryPanel, { HistoryItem } from '@/components/HistoryPanel';
+import ContextualTip from '@/components/ContextualTip';
+import RecommendationCard from '@/components/RecommendationCard';
+import LevelSelector from '@/components/LevelSelector';
+import StreakBadge from '@/components/StreakBadge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeftRight, Sparkles, Target } from 'lucide-react';
+import { ArrowLeftRight, Sparkles, Target, Settings2 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { usePersonalization } from '@/hooks/usePersonalization';
+import { useHyperPersonalization } from '@/hooks/useHyperPersonalization';
 import { useToast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
 
@@ -29,11 +34,38 @@ const Index = () => {
     getMilestoneMessage,
   } = usePersonalization();
 
+  const {
+    learningLevel,
+    behavior,
+    onboardingComplete,
+    isLoaded: hyperLoaded,
+    updateLearningLevel,
+    trackFeatureUsage,
+    trackTranslation,
+    trackLanguageUsage,
+    completeOnboarding,
+    markTipShown,
+    dismissRecommendation,
+    getContextualTips,
+    getRecommendations,
+    getPersonalizedCopy,
+    getUIVisibility,
+    getSmartGreeting,
+  } = useHyperPersonalization();
+
   const [isListening, setIsListening] = useState(false);
   const [originalText, setOriginalText] = useState('');
   const [translatedText, setTranslatedText] = useState('');
   const [phonetic, setPhonetic] = useState('');
   const [displayHistory, setDisplayHistory] = useState<HistoryItem[]>([]);
+  const [showLevelSelector, setShowLevelSelector] = useState(false);
+
+  // Show onboarding for new users
+  useEffect(() => {
+    if (hyperLoaded && !onboardingComplete) {
+      setShowLevelSelector(true);
+    }
+  }, [hyperLoaded, onboardingComplete]);
 
   // Sync history from preferences on load
   useEffect(() => {
@@ -46,6 +78,13 @@ const Index = () => {
       );
     }
   }, [isLoaded, preferences.translationHistory]);
+
+  // Track language usage
+  useEffect(() => {
+    if (preferences.recentLanguages.length > 0) {
+      trackLanguageUsage(preferences.recentLanguages);
+    }
+  }, [preferences.recentLanguages, trackLanguageUsage]);
 
   // Show milestone toasts
   useEffect(() => {
@@ -80,6 +119,7 @@ const Index = () => {
         setTranslatedText(result.translatedText);
         setPhonetic(result.phonetic);
         incrementTranslations();
+        trackTranslation(true, preferences.targetLanguage);
 
         // Add to persistent history
         addToHistory({
@@ -101,15 +141,18 @@ const Index = () => {
           timestamp: new Date(),
         };
         setDisplayHistory(prev => [historyItem, ...prev.slice(0, 9)]);
+      } else {
+        trackTranslation(false, preferences.targetLanguage);
       }
     },
-    [preferences.sourceLanguage, preferences.targetLanguage, translate, incrementTranslations, addToHistory]
+    [preferences.sourceLanguage, preferences.targetLanguage, translate, incrementTranslations, addToHistory, trackTranslation]
   );
 
   const swapLanguages = () => {
     const temp = preferences.sourceLanguage;
     setSourceLanguage(preferences.targetLanguage);
     setTargetLanguage(temp);
+    trackFeatureUsage('swap');
     toast({
       title: "Languages swapped",
       description: "Source and target languages have been exchanged.",
@@ -121,18 +164,29 @@ const Index = () => {
     utterance.lang = lang;
     utterance.rate = 0.8;
     speechSynthesis.speak(utterance);
+    trackFeatureUsage('speak');
   };
 
   const handleClearHistory = () => {
     setDisplayHistory([]);
     clearStoredHistory();
+    trackFeatureUsage('history');
     toast({
       title: "History cleared",
       description: "Your translation history has been cleared.",
     });
   };
 
-  if (!isLoaded) {
+  const handleOnboardingComplete = () => {
+    completeOnboarding();
+    setShowLevelSelector(false);
+    toast({
+      title: `Welcome, ${learningLevel} learner!`,
+      description: "Your experience has been personalized just for you.",
+    });
+  };
+
+  if (!isLoaded || !hyperLoaded) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <VoiceLogo size="lg" className="animate-pulse" />
@@ -141,25 +195,81 @@ const Index = () => {
   }
 
   const progressPercent = getProgressPercentage();
+  const uiVisibility = getUIVisibility;
+  const contextualTips = getContextualTips;
+  const recommendations = getRecommendations;
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Level Selector Modal */}
+      {showLevelSelector && (
+        <LevelSelector
+          currentLevel={learningLevel}
+          onSelectLevel={updateLearningLevel}
+          onComplete={handleOnboardingComplete}
+        />
+      )}
+
       <Header />
 
-      <main className="container max-w-2xl mx-auto px-4 py-8 space-y-8">
+      <main className="container max-w-2xl mx-auto px-4 py-8 space-y-6">
         {/* Welcome Section */}
         <section className="text-center space-y-4">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 rounded-full text-primary text-sm font-medium">
-            <Sparkles className="w-4 h-4" />
-            <span>{getWelcomeMessage()}</span>
+          <div className="flex items-center justify-center gap-3 flex-wrap">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 rounded-full text-primary text-sm font-medium">
+              <Sparkles className="w-4 h-4" />
+              <span>{getSmartGreeting()}</span>
+            </div>
+            {uiVisibility.showStreakBadge && (
+              <StreakBadge days={behavior.consecutiveDays} />
+            )}
           </div>
           <h1 className="text-4xl md:text-5xl font-display font-bold">
-            Speak & <span className="text-gradient">Learn</span>
+            {getPersonalizedCopy('welcomeTitle') || 'Speak &'} <span className="text-gradient">Learn</span>
           </h1>
           <p className="text-muted-foreground text-lg max-w-md mx-auto">
-            Translate your voice instantly with pronunciation guides to help you speak like a native.
+            {uiVisibility.simplifiedLayout
+              ? 'Tap the microphone and speak to translate instantly!'
+              : 'Translate your voice instantly with pronunciation guides to help you speak like a native.'}
           </p>
+          
+          {/* Level Settings Button */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowLevelSelector(true)}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <Settings2 className="w-4 h-4 mr-1" />
+            {learningLevel.charAt(0).toUpperCase() + learningLevel.slice(1)} level
+          </Button>
         </section>
+
+        {/* Contextual Tips */}
+        {contextualTips.length > 0 && (
+          <section className="space-y-3">
+            {contextualTips.slice(0, 1).map((tip) => (
+              <ContextualTip
+                key={tip.id}
+                tip={tip}
+                onDismiss={(tipId) => markTipShown(tipId)}
+              />
+            ))}
+          </section>
+        )}
+
+        {/* Smart Recommendations */}
+        {recommendations.length > 0 && !uiVisibility.simplifiedLayout && (
+          <section className="space-y-3">
+            {recommendations.slice(0, 1).map((rec, index) => (
+              <RecommendationCard
+                key={`${rec.type}_${index}`}
+                recommendation={rec}
+                onDismiss={dismissRecommendation}
+              />
+            ))}
+          </section>
+        )}
 
         {/* Daily Progress */}
         <section className="bg-card rounded-2xl p-4 shadow-card border border-border">
@@ -174,7 +284,7 @@ const Index = () => {
           </div>
           <Progress value={progressPercent} className="h-2" />
           <p className="text-xs text-muted-foreground mt-2 text-center">
-            {getMilestoneMessage()}
+            {getPersonalizedCopy('progressMessage') || getMilestoneMessage()}
           </p>
         </section>
 
@@ -217,6 +327,11 @@ const Index = () => {
               sourceLanguage={preferences.sourceLanguage}
             />
           </div>
+          {uiVisibility.showTutorialHints && !translatedText && (
+            <p className="text-center text-sm text-muted-foreground mt-4">
+              {getPersonalizedCopy('recordPrompt') || 'Tap to speak'}
+            </p>
+          )}
         </section>
 
         {/* Translation Result */}
@@ -228,15 +343,24 @@ const Index = () => {
           isLoading={isLoading}
         />
 
-        {/* History */}
-        <HistoryPanel
-          history={displayHistory}
-          onClear={handleClearHistory}
-          onSpeak={handleSpeak}
-        />
+        {/* Empty State for beginners */}
+        {!translatedText && !isLoading && uiVisibility.simplifiedLayout && (
+          <div className="text-center py-8 text-muted-foreground">
+            <p className="text-sm">{getPersonalizedCopy('emptyState')}</p>
+          </div>
+        )}
 
-        {/* Stats */}
-        {preferences.totalTranslations > 0 && (
+        {/* History - conditionally shown based on behavior */}
+        {uiVisibility.showHistoryPanel && displayHistory.length > 0 && (
+          <HistoryPanel
+            history={displayHistory}
+            onClear={handleClearHistory}
+            onSpeak={handleSpeak}
+          />
+        )}
+
+        {/* Stats - shown for non-beginners */}
+        {uiVisibility.showDetailedStats && preferences.totalTranslations > 0 && (
           <section className="bg-card/50 rounded-2xl p-6 border border-border/50">
             <div className="grid grid-cols-3 gap-4 text-center">
               <div>
@@ -244,11 +368,11 @@ const Index = () => {
                 <p className="text-xs text-muted-foreground">Total Translations</p>
               </div>
               <div>
-                <p className="text-2xl font-bold text-primary">{preferences.sessionCount}</p>
-                <p className="text-xs text-muted-foreground">Sessions</p>
+                <p className="text-2xl font-bold text-primary">{behavior.consecutiveDays}</p>
+                <p className="text-xs text-muted-foreground">Day Streak</p>
               </div>
               <div>
-                <p className="text-2xl font-bold text-primary">{preferences.recentLanguages.length}</p>
+                <p className="text-2xl font-bold text-primary">{behavior.uniqueLanguagesUsed}</p>
                 <p className="text-xs text-muted-foreground">Languages Used</p>
               </div>
             </div>
